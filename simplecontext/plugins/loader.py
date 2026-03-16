@@ -11,7 +11,7 @@ import importlib.util
 import logging
 from typing import Optional, TYPE_CHECKING
 
-from .base import BasePlugin
+from .base import BasePlugin, AppCommandContext
 from .state import PluginState
 
 if TYPE_CHECKING:
@@ -80,9 +80,10 @@ class PluginLoader:
             logger.warning(f"  ⚠️  Gagal load plugin '{module_name}': {e}")
 
     def _inject_state(self, instance: BasePlugin):
-        """Inject PluginState ke instance sebelum setup()"""
+        """Inject PluginState dan app_info ke instance sebelum setup()"""
         if instance.name:
-            instance.state = PluginState(self._storage, instance.name)
+            instance.state    = PluginState(self._storage, instance.name)
+            instance.app_info = {}   # host bisa isi ini via loader.set_app_info()
 
     def _resolve_dependencies(self, candidates: list[BasePlugin]) -> list[BasePlugin]:
         """
@@ -241,14 +242,93 @@ class PluginLoader:
 
     def summary(self) -> dict:
         return {
-            "folder": self.plugin_folder,
-            "total": len(self._plugins),
+            "folder":  self.plugin_folder,
+            "total":   len(self._plugins),
             "plugins": [
-                {"name": p.name, "version": p.version,
-                 "description": p.description, "depends_on": p.depends_on}
+                {
+                    "name":         p.name,
+                    "version":      p.version,
+                    "description":  p.description,
+                    "depends_on":   p.depends_on,
+                    "app_commands": list(p.get_app_commands().keys()),
+                }
                 for p in self._plugins
             ],
         }
+
+    def set_app_info(self, info: dict):
+        """
+        Set app_info ke semua plugin yang ter-load.
+        Dipanggil host app setelah load() untuk inject metadata platform.
+
+        Contoh dari Telegram bot:
+            loader.set_app_info({"platform": "telegram", "version": "1.2.0"})
+        """
+        for p in self._plugins:
+            p.app_info = dict(info)
+
+    def get_all_app_commands(self) -> dict[str, dict]:
+        """
+        Kumpulkan semua app_commands dari semua plugin yang ter-load.
+        Return: { "command_name": {...cmd_info, "plugin": plugin_instance} }
+
+        Digunakan host app untuk auto-register semua command sekaligus.
+        Contoh:
+            for cmd_name, cmd_info in loader.get_all_app_commands().items():
+                app.register_command(cmd_name, cmd_info)
+        """
+        all_commands = {}
+        for plugin in self._plugins:
+            for cmd_name, cmd_info in plugin.get_app_commands().items():
+                if cmd_name in all_commands:
+                    existing = all_commands[cmd_name]["plugin"].name
+                    logger.warning(
+                        f"Command '{cmd_name}' sudah didaftarkan oleh plugin '{existing}'. "
+                        f"Plugin '{plugin.name}' dilewati untuk command ini."
+                    )
+                    continue
+                all_commands[cmd_name] = {**cmd_info, "plugin": plugin}
+        return all_commands
+
+    async def fire_app_command(self, context: AppCommandContext) -> Optional[str]:
+        """
+        Jalankan app_command ke plugin yang bersangkutan.
+
+        Urutan eksekusi:
+        1. Cari plugin yang punya command ini via get_all_app_commands()
+        2. Panggil dedicated handler method (dari app_commands["handler"])
+        3. Jika tidak ada dedicated handler, fallback ke on_app_command()
+        4. Return string response atau None
+
+        Contoh dari host app:
+            ctx    = AppCommandContext.create("semantic", uid, args, platform="telegram")
+            result = await sc._plugins.fire_app_command(ctx)
+        """
+        all_commands = self.get_all_app_commands()
+        cmd_info     = all_commands.get(context.command)
+
+        if cmd_info:
+            plugin       = cmd_info["plugin"]
+            handler_name = cmd_info.get("handler")
+            if handler_name:
+                handler = getattr(plugin, handler_name, None)
+                if handler:
+                    try:
+                        return await handler(context)
+                    except Exception as e:
+                        logger.warning(f"Error di {plugin.name}.{handler_name}: {e}")
+                        return None
+
+        # Fallback: coba on_app_command di semua plugin
+        for plugin in self._plugins:
+            try:
+                result = await plugin.on_app_command(context)
+                if result is not None:
+                    return result
+            except Exception as e:
+                logger.warning(f"{plugin.name}.on_app_command: {e}")
+
+        return None
 
     def __repr__(self):
         return f"<PluginLoader plugins={len(self._plugins)} folder={self.plugin_folder!r}>"
