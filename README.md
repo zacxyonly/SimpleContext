@@ -19,7 +19,7 @@ Tiered Memory · Context Scoring · Intent Planning · Zero Dependencies</p>
 
 <br/>
 
-[Quick Start](#-quick-start) · [Architecture](#️-architecture) · [Agent System](#-agent-system) · [API Reference](#-api-reference) · [Comparison](#-comparison)
+[Quick Start](#-quick-start) · [Architecture](#️-architecture) · [Agent System](#-agent-system) · [API Reference](#-api-reference) · [Ecosystem](#-ecosystem) · [Contribute](#-call-for-contributors)
 
 </div>
 
@@ -353,7 +353,81 @@ SimpleContext/
 | **Agent Chaining** | ✅ | ❌ | ⚠️ | ⚠️ |
 | **Plugin System** | ✅ | ❌ | ⚠️ | ❌ |
 | **Multi-Storage** | ✅ | VectorDB | VectorDB | VectorDB |
-| **Semantic Search** | ❌ keyword | ✅ vector | ✅ vector | ✅ vector |
+| **Semantic Search** | ✅ [via plugin](https://github.com/zacxyonly/SimpleContext-Plugin) | ✅ vector | ✅ vector | ✅ vector |
+
+---
+
+## 🌐 Ecosystem
+
+SimpleContext adalah core engine dari ekosistem yang terus berkembang. Gunakan bersama repositori lain untuk setup yang lebih lengkap:
+
+| Repositori | Deskripsi |
+|------------|-----------|
+| [**SimpleContext**](https://github.com/zacxyonly/SimpleContext) | Core engine — Universal AI Brain *(repo ini)* |
+| [**SimpleContext-Plugin**](https://github.com/zacxyonly/SimpleContext-Plugin) | Official & community plugin registry — tambah kemampuan via drop-in plugins |
+| [**SimpleContext-Bot**](https://github.com/zacxyonly/SimpleContext-Bot) | AI Telegram Bot powered by SimpleContext — one-command setup, auto-downloads engine + agents |
+| [**SimpleContext-Agents**](https://github.com/zacxyonly/SimpleContext-Agents) | Ready-to-use agent definitions — koleksi YAML agent siap pakai |
+
+### Contoh setup ekosistem penuh
+
+```
+SimpleContext          ← otak / engine
+       │
+       ├── SimpleContext-Agents   ← definisi agent (YAML)
+       ├── SimpleContext-Plugin   ← plugin tambahan (vector search, dll)
+       └── SimpleContext-Bot      ← interface ke user (Telegram)
+```
+
+---
+
+## 🤝 Call for Contributors
+
+**SimpleContext butuh plugin buatanmu.**
+
+Plugin system sudah siap — kamu tinggal buat satu file Python dan submit ke [SimpleContext-Plugin](https://github.com/zacxyonly/SimpleContext-Plugin). Tidak perlu fork core, tidak perlu setup rumit.
+
+### Plugin apa yang dibutuhkan?
+
+Beberapa ide yang belum ada dan sangat berguna:
+
+| Ide Plugin | Deskripsi |
+|------------|-----------|
+| `plugin-auto-tagger` | Tag otomatis setiap pesan berdasarkan keyword rules |
+| `plugin-summarizer` | Auto-compress working memory ke episodic via LLM |
+| `plugin-sentiment` | Deteksi sentimen user, simpan ke metadata |
+| `plugin-rate-limiter` | Batasi frekuensi request per user |
+| `plugin-webhook` | Kirim event ke endpoint eksternal via HTTP |
+| `plugin-translate` | Auto-translate pesan ke bahasa tertentu |
+| `plugin-analytics` | Dashboard statistik penggunaan per user/agent |
+
+### Seberapa susah membuat plugin?
+
+```python
+# Ini sudah cukup untuk jadi plugin yang valid:
+from simplecontext.plugins.base import BasePlugin
+
+class MyPlugin(BasePlugin):
+    name    = "my_plugin"
+    version = "1.0.0"
+
+    def on_before_llm(self, user_id, agent_id, messages):
+        # lakukan sesuatu sebelum LLM dipanggil
+        return messages
+```
+
+Satu file. Drop ke `plugins/`. Selesai.
+
+### Cara kontribusi
+
+```
+1. Buka https://github.com/zacxyonly/SimpleContext-Plugin
+2. Fork → buat plugin di community/plugin-namakalian/
+3. Ikuti panduan di CONTRIBUTING.md
+4. Submit Pull Request
+```
+
+> 💡 **Punya ide plugin tapi tidak yakin cara implementasinya?**
+> Buka [issue di SimpleContext-Plugin](https://github.com/zacxyonly/SimpleContext-Plugin/issues) — diskusikan dulu, baru build.
 
 ---
 
@@ -377,5 +451,9 @@ MIT — free to use, modify, and distribute.
 Built with ❤️ — zero dependencies, maximum brain.
 
 **[⭐ Star this repo](https://github.com/zacxyonly/SimpleContext)** if you find it useful!
+
+<br/>
+
+[SimpleContext-Plugin](https://github.com/zacxyonly/SimpleContext-Plugin) · [SimpleContext-Bot](https://github.com/zacxyonly/SimpleContext-Bot) · [SimpleContext-Agents](https://github.com/zacxyonly/SimpleContext-Agents)
 
 </div>
