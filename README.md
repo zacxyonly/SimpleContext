@@ -1,303 +1,255 @@
-# 🧠 SimpleContext v4
+<div align="center">
 
-> **Universal AI Brain** — Tiered Memory, Context Planning, Smart Retrieval.
-> Zero external dependencies. Fully backward compatible.
+<h1>🧠 SimpleContext</h1>
+
+<p><strong>Universal AI Brain for AI Agents</strong><br/>
+Tiered Memory · Context Scoring · Intent Planning · Zero Dependencies</p>
+
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Tests](https://img.shields.io/badge/Tests-135%20passing-brightgreen?style=flat-square)](tests/)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+[![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success?style=flat-square)](setup.py)
+[![Version](https://img.shields.io/badge/Version-4.1-blueviolet?style=flat-square)](CHANGELOG.md)
+
+<br/>
+
+> **SimpleContext is not another vector database wrapper.**
+> It's a structured context brain — tiered memory, intent-aware retrieval,
+> fact extraction, and importance scoring. Without a single external dependency.
+
+<br/>
+
+[Quick Start](#-quick-start) · [Architecture](#️-architecture) · [Agent System](#-agent-system) · [API Reference](#-api-reference) · [Comparison](#-comparison)
+
+</div>
 
 ---
 
-## ✨ Apa yang Baru di v4
+## 🤔 Why SimpleContext?
 
-| Fitur | v3 | v4 |
-|---|---|---|
-| Memory | Flat list | **3 Tier** (working/episodic/semantic) |
-| Retrieval | N pesan terakhir | **Score-based** (relevance+importance+recency) |
-| Context planning | Auto-route keyword | **ContextPlanner** → RetrievalPlan |
-| Memory evolution | Compress potong | **MemoryProcessor** extract facts + dedup |
-| Conflict handling | ❌ | **Supersedes** + confidence scoring |
-| Dedup | ❌ | **Jaccard similarity** untuk facts |
-| Node metadata | ❌ | **ContextNode** (path, tier, kind, status, importance...) |
-| Budget control | ❌ | **Per-tier + global** (max_nodes, max_chars) |
-| API v3 | ✅ | **Tetap jalan**, tidak ada breaking change |
-
----
-
-## 🏗️ Arsitektur
+Most AI agent frameworks treat memory as a flat list of messages. This breaks down fast:
 
 ```
-SimpleContext v4
-│
-├── context/
-│   ├── ContextNode        ← unit terkecil: path + tier + kind + score
-│   ├── ContextPlanner     ← query → RetrievalPlan (intent, budget, flags)
-│   ├── ContextEngine      ← facade: collect→resolve→filter→score→select
-│   │   ├── ContextRetriever   ← ambil candidates dari storage
-│   │   ├── StatusResolver     ← TTL check → mark expired
-│   │   ├── CandidateFilter    ← filter status=active
-│   │   ├── ContextScorer      ← rank: relevance*0.6 + importance*0.3 + recency*0.1
-│   │   └── ContextSelector    ← enforce budget + global limits
-│   ├── PromptBuilder      ← nodes → messages list (deterministic)
-│   └── MemoryProcessor    ← turn → extract facts → dedup → conflict → store
-│
-├── memory/
-│   ├── TieredMemory       ← working | episodic | semantic
-│   └── Memory             ← v3 compat facade (blended working+episodic)
-│
-├── storage/
-│   ├── SQLite (default)
-│   ├── Redis (opsional)
-│   └── PostgreSQL (opsional)
-│
-└── agent/
-    ├── AgentRegistry      ← hot-reload YAML agents
-    └── AgentRouter        ← TF-IDF routing + chaining
+❌ Flat memory:    [msg1, msg2, ... msg500]  → retrieval gets noisy
+✅ Tiered memory:  working · episodic · semantic  → structured, scored, evolved
+```
+
+SimpleContext gives your agent a **structured brain** — not just a chat log.
+
+---
+
+## ✨ Features
+
+| | Feature | Description |
+|---|---|---|
+| 🧠 | **3-Tier Memory** | `working` (active) · `episodic` (sessions) · `semantic` (long-term facts) |
+| 🎯 | **Intent Planning** | Auto-detect intent → smart retrieval strategy per query type |
+| 📊 | **Context Scoring** | `relevance×0.55 + importance×0.25 + recency×0.10 + path_priority×0.10` |
+| 🔍 | **Fact Extraction** | Rule-based: `"user uses Proxmox"`, `"user project Mangafork"` |
+| ♻️ | **Memory Evolution** | Jaccard dedup · conflict resolution · importance decay |
+| ⚡ | **LRU Cache** | 30s TTL cache for repeated queries — reduces DB load |
+| 🤖 | **Agent YAML** | Define agents in YAML · hot-reload without restart |
+| 🔗 | **Agent Chaining** | Agent A handoff to Agent B based on user message |
+| 💾 | **Multi-Storage** | SQLite (default, zero install) · Redis · PostgreSQL |
+| 🔌 | **Plugin System** | Hooks + persistent state + dependency resolver |
+| 🔄 | **Backward Compat** | All v3 API still works — zero breaking changes |
+| 📦 | **Zero Dependencies** | Only Python built-ins: `sqlite3`, `json`, `re`, `datetime` |
+
+---
+
+## 🏗️ Architecture
+
+```
+User Message
+      │
+      ▼
+ AgentRouter ──────── agents/*.yaml  (hot-reload, TF-IDF routing)
+      │
+      ▼
+ ContextPlanner
+      │  intent : coding | personal | task | knowledge | conversation
+      │  budget : { working:5, episodic:2, semantic:4, skills:3 }
+      ▼
+ ContextEngine
+      ├── Retriever   → collect candidates
+      ├── Resolver    → TTL check, mark expired
+      ├── Filter      → active nodes only
+      ├── Scorer      → rank by relevance + importance + recency + path
+      └── Selector    → enforce budget + max_nodes + max_chars
+      │
+      ▼
+ PromptBuilder  (deterministic, bullet-format per tier)
+      │
+      ▼
+    LLM  ←→  Gemini / OpenAI / Claude / Ollama / any
+      │
+      ▼
+ MemoryProcessor
+      ├── store messages  → working tier
+      ├── extract facts   → semantic tier (rule-based, no LLM)
+      ├── dedup           → Jaccard similarity ≥ 0.65
+      ├── conflict resolve → confidence-based supersedes
+      └── update importance scores
 ```
 
 ---
 
 ## 🚀 Quick Start
 
+**No install needed.** Copy `simplecontext/` folder into your project.
+
 ```python
 from simplecontext import SimpleContext
 
 sc = SimpleContext("config.yaml")
-```
 
-### Mode v3 (backward compat — tidak ada yang perlu diubah)
-
-```python
+# Simple mode (v3 API — backward compatible)
 result   = sc.router.route(user_id, message)
 messages = sc.prepare_messages(user_id, message, result)
 reply    = your_llm(messages)
 reply    = sc.process_response(user_id, message, reply, result)
-```
 
-### Mode v4 (full context engine)
-
-```python
-# High-level: satu method untuk segalanya
+# Full mode (v4 API — one liner)
 ctx   = sc.chat(user_id, message)
 reply = your_llm(ctx.messages)
 reply = ctx.save(reply)
-
-# Low-level: kontrol penuh
-profile = sc.memory(user_id).get_profile()
-plan    = sc.planner.plan(message, user_id, profile=profile, agent_id="coding")
-nodes   = sc.engine.retrieve(plan)
-msgs    = sc.builder.build(system_prompt, nodes, message)
-reply   = your_llm(msgs)
-
-from simplecontext import ProcessTurn
-turn = ProcessTurn(user_id, message, reply, agent_id="coding", used_nodes=nodes)
-sc.processor.process(turn)
 ```
 
----
-
-## 📖 ContextNode
-
-Unit terkecil dari context system.
+### Works with any LLM
 
 ```python
-from simplecontext import ContextNode, Tier, NodeKind, NodeStatus
+# Gemini
+import litellm
+reply = litellm.completion(model="gemini/gemini-2.0-flash",
+    messages=ctx.messages).choices[0].message.content
 
-node = ContextNode(
-    user_id    = "user_123",
-    path       = "/memory/semantic/user_123/abc",
-    tier       = Tier.SEMANTIC,
-    kind       = NodeKind.FACT,
-    content    = "user pakai python untuk data science",
-    importance = 0.7,
-    confidence = 0.9,
-    source     = "user",
-    tags       = ["python", "data-science"],
-)
-```
+# OpenAI
+from openai import OpenAI
+reply = OpenAI().chat.completions.create(
+    model="gpt-4o", messages=ctx.messages).choices[0].message.content
 
-### Tiers
+# Ollama (local)
+import ollama
+reply = ollama.chat(model="llama3", messages=ctx.messages)["message"]["content"]
 
-| Tier | Kapan Dipakai | Default TTL |
-|---|---|---|
-| `working` | Pesan aktif, task state | 2 jam |
-| `episodic` | Ringkasan sesi, interaction history | 30 hari |
-| `semantic` | Facts, knowledge jangka panjang | Permanen |
-
-### Kinds per Tier
-
-| Tier | Kind yang Valid |
-|---|---|
-| `working` | `message`, `fact`, `task_state` |
-| `episodic` | `summary`, `fact` |
-| `semantic` | `fact`, `resource` |
-| Skills namespace | `skill` (path `/skills/...`) |
-
-### Node Status
-
-```
-active → normal, bisa di-retrieve
-expired → TTL habis, soft deleted
-superseded → digantikan fact baru
-deleted → dihapus manual
+# Anthropic Claude
+import anthropic
+sys_msg = next(m["content"] for m in ctx.messages if m["role"] == "system")
+history = [m for m in ctx.messages if m["role"] != "system"]
+reply = anthropic.Anthropic().messages.create(
+    model="claude-3-5-sonnet-20241022",
+    system=sys_msg, messages=history, max_tokens=1024).content[0].text
 ```
 
 ---
 
-## 📖 TieredMemory (v4 API)
+## 🤖 Agent System
+
+Define agents in YAML. **Bot doesn't need to restart** when you edit or add agents.
+
+```yaml
+# agents/coding.yaml
+name: coding
+description: Expert programmer for all languages
+
+triggers:
+  keywords: [code, bug, error, python, javascript, debug, fix]
+  priority: 10
+
+personality:
+  default: |
+    You are a senior software engineer.
+    Always use proper code blocks with language tags.
+  beginner: |
+    You are a patient programming teacher.
+    Explain every step with simple examples.
+  expert: |
+    Principal engineer. Be concise and technical.
+
+skills:
+  - name: code_format
+    content: Always use ```language for all code.
+    priority: 10
+
+chain:
+  - condition: deploy OR server OR docker
+    to: devops
+    message: Routing to DevOps agent.
+```
+
+**Add a new agent** = create a new `.yaml` file in `agents/`. Done.
+
+---
+
+## 📖 API Reference
+
+### Memory (v3 API)
+
+```python
+mem = sc.memory(user_id)
+
+mem.add_user("hello!")
+mem.add_assistant("hi there!")
+history = mem.get_for_llm(limit=10)   # ready for LLM
+
+# Persistent user facts
+mem.remember("name", "Alice")
+mem.remember("stack", "Python + FastAPI")
+mem.recall("name")                    # → "Alice"
+
+# Compress old messages into episodic summary
+mem.compress(keep_last=10)
+```
+
+### TieredMemory (v4 API)
 
 ```python
 ctx = sc.context(user_id)
 
-# Working tier — pesan aktif
-ctx.working.add("isi pesan", NodeKind.MESSAGE, importance=0.8)
-ctx.working.get(limit=10)
-ctx.working.count()
+ctx.working.add("debug this error", NodeKind.MESSAGE)
+ctx.episodic.add("session summary", NodeKind.SUMMARY)
+ctx.semantic.add("user uses Proxmox", NodeKind.FACT, importance=0.8)
 
-# Episodic tier — ringkasan sesi
-ctx.episodic.add("ringkasan sesi tadi", NodeKind.SUMMARY)
-ctx.episodic.get()
-
-# Semantic tier — knowledge jangka panjang
-ctx.semantic.add("user pakai docker", NodeKind.FACT, confidence=0.9)
-ctx.semantic.get()
-
-# Stats
-ctx.stats()  # → {"working": 5, "episodic": 1, "semantic": 3}
-
-# Prune: hapus expired + deleted dari DB
-ctx.prune()
+ctx.stats()   # → {"working": 5, "episodic": 1, "semantic": 3}
+ctx.prune()   # remove expired + deleted nodes from DB
 ```
 
----
+### Intent → Retrieval Strategy
 
-## 📖 ContextPlanner + ContextEngine
+| Intent | Working | Episodic | Semantic | Skills |
+|---|:---:|:---:|:---:|:---:|
+| `conversation` | ✅ | ✅ | ❌ | ❌ |
+| `personal` | ✅ | ❌ | ✅ | ❌ |
+| `coding` | ✅ | ✅ | ✅ | ✅ |
+| `knowledge` | ❌ | ❌ | ✅ | ❌ |
+| `task` | ✅ | ✅ | ✅ | ✅ |
+
+### Debug & Utilities
 
 ```python
-# Plan: tentukan strategi retrieval
-plan = sc.planner.plan(
-    query    = "ada bug di python saya",
-    user_id  = user_id,
-    profile  = sc.memory(user_id).get_profile(),
-    agent_id = "coding",
-)
-# plan.intent = "coding"
-# plan.working = True, plan.semantic = True
-# plan.include_skills = True (ada agent_id + coding intent)
-# plan.budget = {"working": 6, "episodic": 2, "semantic": 4, "skills": 3}
+sc.enable_debug(True)         # log retrieval pipeline details
+sc.apply_decay(user_id)       # apply importance decay (call periodically)
+sc.apply_decay()              # apply to all users
 
-# Retrieve: pipeline lengkap
-nodes = sc.engine.retrieve(plan)
-# → list ContextNode sudah di-score dan di-select
-
-# Debug info
-info = sc.engine.get_stats(plan)
-# → {"candidates": 20, "active": 15, "selected": 10, "total_chars": 3200}
-```
-
-### Intent Detection (rule-based, zero dependency)
-
-| Intent | Keyword Signals |
-|---|---|
-| `coding` | code, bug, error, python, javascript, debug... |
-| `personal` | saya, aku, prefer, suka, i use, i like... |
-| `task` | tolong, buatkan, generate, tugas, step... |
-| `knowledge` | apa, what, explain, jelaskan, mengapa... |
-| `conversation` | (default kalau tidak ada signal) |
-
-### Scoring Formula
-
-```
-score = relevance * 0.6 + importance * 0.3 + recency * 0.1
-
-relevance = text_overlap * 0.6 + tag_overlap * 0.25 + path_overlap * 0.15
-recency   = 2^(-age_hours / half_life)  # exponential decay
+stats = sc.engine.get_stats(plan)
+# → {"candidates": 37, "active": 28, "selected": 11, "total_chars": 3200}
 ```
 
 ---
 
-## 📖 MemoryProcessor
-
-```python
-from simplecontext import ProcessTurn
-
-turn = ProcessTurn(
-    user_id            = user_id,
-    user_message       = "saya menggunakan docker untuk deployment",
-    assistant_response = "Docker bagus untuk containerization.",
-    agent_id           = "devops",
-    used_nodes         = nodes,          # untuk update importance
-    runtime_state      = {"intent": "task"},
-)
-
-stored_nodes = sc.processor.process(turn)
-```
-
-Pipeline internal:
-1. Simpan pesan user + assistant → `working` tier
-2. Extract facts dari pesan user (heuristik, tanpa LLM)
-3. Dedup via Jaccard (hanya `fact` kind, max 20 token)
-4. Conflict resolution (similarity ≥ 0.65 + confidence check)
-5. Assign ke `semantic` tier
-6. Update importance node yang dipakai (`+0.02` per use)
-
-### Importance Delta
-
-| Event | Delta |
-|---|---|
-| Node dipakai dalam retrieval | `+0.02` |
-| Fact baru dari user | `+0.10` |
-| Node di-supersede | `-0.10` |
-| Daily decay | `-0.005` |
-
----
-
-## 📖 PromptBuilder
-
-```python
-messages = sc.builder.build(
-    system_base  = "Kamu adalah AI expert.",
-    nodes        = retrieved_nodes,
-    user_message = message,
-    history      = sc.memory(user_id).get_for_llm(limit=5),
-    profile      = sc.memory(user_id).get_profile(),
-)
-```
-
-Output format (deterministic):
-```
-[System]
-Kamu adalah AI expert.
-
-USER PROFILE:
-- nama: Budi
-- level: expert
-
-[WORKING CONTEXT]
-User: pesan terbaru...
-
-[EPISODIC MEMORY]
-Ringkasan sesi sebelumnya...
-
-[SEMANTIC KNOWLEDGE]
-user pakai python untuk data science
-
-[RELEVANT SKILLS]
-Skill [code_format]: Gunakan code block...
-```
-
----
-
-## ⚙️ Config (`config.yaml`)
+## ⚙️ Configuration
 
 ```yaml
+# config.yaml
 storage:
-  backend: sqlite        # sqlite | memory | redis | postgresql
+  backend: sqlite          # sqlite | memory | redis | postgresql
   path: ./sc_data.db
 
 memory:
   default_limit: 20
   ttl_hours:
-    working: 2
-    episodic: 720        # 30 hari
-    # semantic: null     # permanen (default)
+    working: 2             # working nodes expire after 2 hours
+    episodic: 720          # episodic nodes expire after 30 days
   compression:
     enabled: false
     threshold: 50
@@ -312,42 +264,96 @@ plugins:
   enabled: true
   folder: ./plugins
 
-export:
-  folder: ./exports
+debug:
+  retrieval: false
 ```
 
 ---
 
-## 🔌 Kompatibel Semua LLM
+## 🔌 Plugin System
 
 ```python
-# Gemini via LiteLLM
-import litellm
-ctx      = sc.chat(user_id, message)
-reply    = litellm.completion(model="gemini/gemini-2.0-flash",
-               api_key=KEY, messages=ctx.messages).choices[0].message.content
-ctx.save(reply)
+from simplecontext.plugins.base import BasePlugin
 
-# OpenAI
-from openai import OpenAI
-reply = OpenAI().chat.completions.create(
-    model="gpt-4o", messages=ctx.messages).choices[0].message.content
-ctx.save(reply)
+class MyPlugin(BasePlugin):
+    name       = "my_plugin"
+    depends_on = []            # declare dependencies
 
-# Anthropic Claude
-import anthropic
-sys = next(m["content"] for m in ctx.messages if m["role"]=="system")
-hist = [m for m in ctx.messages if m["role"] != "system"]
-reply = anthropic.Anthropic().messages.create(
-    model="claude-3-5-sonnet-20241022", system=sys,
-    messages=hist, max_tokens=1024).content[0].text
-ctx.save(reply)
+    def setup(self):
+        self.count = self.state.get("count", 0)  # persistent state
 
-# Ollama (lokal)
-import ollama
-reply = ollama.chat(model="llama3", messages=ctx.messages)["message"]["content"]
-ctx.save(reply)
+    # Hooks available:
+    def on_message_saved(self, user_id, role, content, tags, metadata): ...
+    def on_before_llm(self, user_id, agent_id, messages) -> list: ...
+    def on_after_llm(self, user_id, agent_id, response) -> str: ...
+    def on_agent_routed(self, user_id, agent_id, message): ...
+    def on_prompt_build(self, agent_id, prompt) -> str: ...
+    def on_export(self, data) -> dict: ...
+
+sc.use(MyPlugin())
+# or drop the file in ./plugins/ — auto-loaded on startup
 ```
+
+---
+
+## 📁 Project Structure
+
+```
+SimpleContext/
+├── simplecontext/
+│   ├── core.py              ← SimpleContext + ChatContext (entry point)
+│   ├── memory.py            ← Memory (v3) + TieredMemory (v4)
+│   ├── skills.py            ← Skills: groups, conditions, inheritance
+│   ├── enums.py             ← Tier, NodeKind, NodeStatus, Intent
+│   ├── context/
+│   │   ├── node.py          ← ContextNode + validator
+│   │   ├── planner.py       ← ContextPlanner + RetrievalPlan
+│   │   ├── engine.py        ← ContextEngine facade + LRU cache
+│   │   ├── retriever.py     ← collect candidates
+│   │   ├── resolver.py      ← TTL → mark expired
+│   │   ├── scorer.py        ← scoring formula
+│   │   ├── selector.py      ← budget enforcement
+│   │   ├── builder.py       ← PromptBuilder
+│   │   ├── processor.py     ← MemoryProcessor + decay
+│   │   └── cache.py         ← LRU cache
+│   ├── storage/
+│   │   ├── sqlite.py        ← default, zero install
+│   │   ├── redis.py         ← pip install redis
+│   │   └── postgres.py      ← pip install psycopg2-binary
+│   ├── agent/
+│   │   ├── schema.py        ← parse YAML agent definitions
+│   │   ├── registry.py      ← hot-reload agent files
+│   │   └── router.py        ← TF-IDF routing + chaining
+│   └── plugins/
+│       ├── base.py          ← BasePlugin + hooks
+│       ├── loader.py        ← dynamic loader + dependency resolver
+│       └── state.py         ← persistent plugin state
+├── agents/                  ← agent YAML definitions
+├── plugins/                 ← drop custom plugins here
+├── tests/
+│   ├── test_all.py          ← 107 unit tests
+│   └── test_benchmark.py    ← 28 accuracy + benchmark tests
+└── config.yaml.example
+```
+
+---
+
+## 📊 Comparison
+
+| | **SimpleContext** | OpenViking | LangChain | AutoGPT |
+|---|:---:|:---:|:---:|:---:|
+| **Setup time** | < 1 min | 30+ min | ~5 min | ~10 min |
+| **Dependencies** | **Zero** | Go + VLM | Many | Many |
+| **Tiered Memory** | ✅ | ❌ | ❌ | ❌ |
+| **Intent Planning** | ✅ | ❌ | ❌ | ❌ |
+| **Context Scoring** | ✅ | ❌ | ❌ | ❌ |
+| **Fact Extraction** | ✅ | ❌ | ❌ | ❌ |
+| **Conflict Handling** | ✅ | ❌ | ❌ | ❌ |
+| **Agent YAML + Hot-reload** | ✅ | ❌ | ❌ | ❌ |
+| **Agent Chaining** | ✅ | ❌ | ⚠️ | ⚠️ |
+| **Plugin System** | ✅ | ❌ | ⚠️ | ❌ |
+| **Multi-Storage** | ✅ | VectorDB | VectorDB | VectorDB |
+| **Semantic Search** | ❌ keyword | ✅ vector | ✅ vector | ✅ vector |
 
 ---
 
@@ -355,29 +361,21 @@ ctx.save(reply)
 
 ```bash
 python -m unittest discover tests -v
-# 107 tests, ~0.1 detik
+# Ran 135 tests in 1.2s — OK
 ```
 
 ---
 
-## 📊 Perbandingan
+## 📄 License
 
-| | SimpleContext v4 | OpenViking | LangChain | AutoGPT |
-|---|---|---|---|---|
-| **Setup** | Copy folder | 30+ menit | pip install | pip install |
-| **Dependencies** | Zero | Go + VLM | Banyak | Banyak |
-| **Tiered Memory** | ✅ | ❌ | ❌ | ❌ |
-| **Context Scoring** | ✅ | ❌ | ❌ | ❌ |
-| **Conflict handling** | ✅ | ❌ | ❌ | ❌ |
-| **Memory dedup** | ✅ | ❌ | ❌ | ❌ |
-| **Budget control** | ✅ | ❌ | ❌ | ❌ |
-| **Agent YAML** | ✅ | ❌ | ❌ | ❌ |
-| **Hot-reload** | ✅ | ❌ | ❌ | ❌ |
-| **Semantic search** | ❌ keyword | ✅ vector | ✅ vector | ✅ vector |
-| **Backward compat** | ✅ v3 API | N/A | N/A | N/A |
+MIT — free to use, modify, and distribute.
 
 ---
 
-## 📄 Lisensi
+<div align="center">
 
-MIT License
+Built with ❤️ — zero dependencies, maximum brain.
+
+**[⭐ Star this repo](https://github.com/zacxyonly/SimpleContext)** if you find it useful!
+
+</div>
