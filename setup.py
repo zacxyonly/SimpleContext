@@ -5,11 +5,11 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="simplecontext",
-    version="3.0.0",
+    version="4.2.0",
     description="Universal AI Brain — Zero Touch, Zero Dependencies.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/USERNAME/SimpleContext",
+    url="https://github.com/zacxyonly/SimpleContext",
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[],
