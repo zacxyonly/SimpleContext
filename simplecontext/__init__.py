@@ -8,7 +8,7 @@ Zero external dependencies. Fully backward compatible.
 from .core import SimpleContext, ChatContext
 from .memory import Memory, TieredMemory, TierView
 from .skills import Skills, SkillGroup
-from .plugins.base import BasePlugin
+from .plugins.base import BasePlugin, AppCommandContext
 from .config.schema import Config
 from .agent.schema import AgentDef
 from .agent.registry import AgentRegistry
@@ -20,7 +20,7 @@ from .context.builder import PromptBuilder
 from .context.processor import MemoryProcessor, ProcessTurn
 from .enums import Tier, NodeKind, NodeStatus, Intent
 
-__version__ = "4.0.0"
+__version__ = "4.3.0"
 from .context.fuzzy    import FuzzyRetriever
 from .context.graph    import GraphStore, Relationship
 from .context.patterns import PatternDetector
@@ -31,7 +31,7 @@ __all__ = [
     "SimpleContext", "ChatContext",
     "Memory", "TieredMemory", "TierView",
     "Skills", "SkillGroup",
-    "BasePlugin",
+    "BasePlugin", "AppCommandContext",
     "Config",
     "AgentDef", "AgentRegistry", "AgentRouter", "RouteResult",
     "ContextNode", "ContextPlanner", "RetrievalPlan",
