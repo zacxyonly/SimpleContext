@@ -1,5 +1,5 @@
 """
-context/scorer.py v4.1 — ContextScorer
+context/scorer.py v4.2 — ContextScorer
 Score formula diperluas:
   score = relevance*0.55 + importance*0.25 + recency*0.10 + path_priority*0.10
 
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .planner import RetrievalPlan
 
 from ..enums import Intent
+from .fuzzy import fuzzy_match_score as fuzzy_score
 
 # Bobot scoring (total = 1.0)
 W_RELEVANCE     = 0.55
@@ -87,6 +88,11 @@ class ContextScorer:
         path_sim = _token_overlap(query_tokens, _tokenize(node.path.replace("/", " ")))
 
         base = text_sim * W_TEXT + tag_sim * W_TAG + path_sim * W_PATH
+
+        # Fuzzy boost: kalau exact match rendah, coba fuzzy
+        if base < 0.1 and query_tokens:
+            fuzzy = fuzzy_score(" ".join(query_tokens), node.content, threshold=0.75)
+            base  = max(base, fuzzy * 0.7)  # fuzzy diberi bobot 70% dari exact
 
         # Intent boost
         intent_boost = self._intent_boost(node, plan.intent)

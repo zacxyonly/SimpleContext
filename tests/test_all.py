@@ -1300,3 +1300,279 @@ class TestMemoryProcessorIntegration(unittest.TestCase):
 if __name__ == "__main__":
     print("🧪 Menjalankan Test Suite SimpleContext v4...\n")
     unittest.main(verbosity=2)
+
+
+# ── v4.2 Feature Tests ────────────────────────────────────
+
+class TestFuzzySearch(unittest.TestCase):
+
+    def test_levenshtein_identical(self):
+        from simplecontext.context.fuzzy import levenshtein
+        self.assertEqual(levenshtein("hello", "hello"), 0)
+
+    def test_levenshtein_one_edit(self):
+        from simplecontext.context.fuzzy import levenshtein
+        self.assertEqual(levenshtein("cat", "bat"), 1)
+
+    def test_levenshtein_ratio(self):
+        from simplecontext.context.fuzzy import levenshtein_ratio
+        self.assertAlmostEqual(levenshtein_ratio("hello", "hello"), 1.0)
+        self.assertLess(levenshtein_ratio("abc", "xyz"), 0.5)
+
+    def test_fuzzy_match_typo(self):
+        from simplecontext.context.fuzzy import fuzzy_match_score
+        # "ptyhon" adalah typo dari "python"
+        score = fuzzy_match_score("ptyhon debug", "python debug error")
+        self.assertGreater(score, 0.2)
+
+    def test_fuzzy_match_exact(self):
+        from simplecontext.context.fuzzy import fuzzy_match_score
+        score = fuzzy_match_score("python debug", "python debug error fix")
+        self.assertGreater(score, 0.5)
+
+    def test_fuzzy_match_irrelevant(self):
+        from simplecontext.context.fuzzy import fuzzy_match_score
+        score = fuzzy_match_score("python bug", "cuaca hari ini cerah")
+        self.assertEqual(score, 0.0)
+
+    def test_fuzzy_retriever(self):
+        sc = make_sc()
+        from simplecontext import NodeKind
+        sc.context("u_fuzzy").working.add("python debug error", NodeKind.MESSAGE)
+        # Search dengan typo
+        results = sc.fuzzy.search("u_fuzzy", "ptyhon debg")
+        self.assertGreater(len(results), 0)
+        sc.close()
+
+
+class TestMemoryGraph(unittest.TestCase):
+
+    def setUp(self):
+        self.sc = make_sc()
+
+    def tearDown(self):
+        self.sc.close()
+
+    def test_link_nodes(self):
+        from simplecontext import NodeKind
+        ctx  = self.sc.context("u_graph")
+        n1   = ctx.semantic.add("user pakai python", NodeKind.FACT)
+        n2   = ctx.semantic.add("user bikin proyek django", NodeKind.FACT)
+        rel  = self.sc.graph.link(n1.id, n2.id, "related_to", strength=0.8)
+        self.assertEqual(rel.source_id, n1.id)
+        self.assertEqual(rel.target_id, n2.id)
+        self.assertAlmostEqual(rel.strength, 0.8)
+
+    def test_get_related(self):
+        from simplecontext import NodeKind
+        ctx = self.sc.context("u_graph2")
+        n1  = ctx.semantic.add("server down", NodeKind.FACT)
+        n2  = ctx.semantic.add("error 503", NodeKind.FACT)
+        self.sc.graph.link(n1.id, n2.id, "causes")
+        rels = self.sc.graph.get_related(n1.id, direction="out")
+        self.assertEqual(len(rels), 1)
+        self.assertEqual(rels[0].rel_type, "causes")
+
+    def test_get_neighbors(self):
+        from simplecontext import NodeKind
+        ctx = self.sc.context("u_graph3")
+        n1  = ctx.semantic.add("fact A", NodeKind.FACT)
+        n2  = ctx.semantic.add("fact B", NodeKind.FACT)
+        n3  = ctx.semantic.add("fact C", NodeKind.FACT)
+        self.sc.graph.link(n1.id, n2.id, "related_to")
+        self.sc.graph.link(n1.id, n3.id, "related_to")
+        neighbors = self.sc.graph.get_neighbors(n1.id)
+        self.assertIn(n2.id, neighbors)
+        self.assertIn(n3.id, neighbors)
+
+    def test_invalid_rel_type(self):
+        from simplecontext.context.graph import Relationship
+        with self.assertRaises(ValueError):
+            Relationship("a", "b", "invalid_type")
+
+    def test_graph_summary(self):
+        from simplecontext import NodeKind
+        ctx = self.sc.context("u_graph4")
+        n1  = ctx.semantic.add("A", NodeKind.FACT)
+        n2  = ctx.semantic.add("B", NodeKind.FACT)
+        self.sc.graph.link(n1.id, n2.id, "related_to")
+        s = self.sc.graph.summary()
+        self.assertIn("total_relationships", s)
+        self.assertGreater(s["total_relationships"], 0)
+
+
+class TestPatternDetection(unittest.TestCase):
+
+    def setUp(self):
+        self.sc = make_sc()
+
+    def tearDown(self):
+        self.sc.close()
+
+    def test_detect_returns_dict(self):
+        patterns = self.sc.detect_patterns("u_patterns")
+        self.assertIsInstance(patterns, dict)
+        self.assertIn("peak_hours", patterns)
+        self.assertIn("topics_frequency", patterns)
+        self.assertIn("sentiment_trend", patterns)
+
+    def test_detect_with_messages(self):
+        from simplecontext import ProcessTurn
+        for i in range(5):
+            self.sc.processor.process(ProcessTurn(
+                user_id="u_pat2",
+                user_message=f"ada bug di python kode saya ke-{i}",
+                assistant_response="coba cek error messagenya",
+            ))
+        patterns = self.sc.detect_patterns("u_pat2")
+        self.assertGreater(patterns["total_messages"], 0)
+        # Coding topik harus terdeteksi
+        topics = patterns["topics_frequency"]
+        self.assertIn("coding", topics)
+
+    def test_sentiment_positive(self):
+        from simplecontext.context.patterns import PatternDetector, _tokenize
+        from simplecontext import NodeKind
+        ctx = self.sc.context("u_sent")
+        ctx.working.add("bagus banget thanks sukses", NodeKind.MESSAGE,
+                        source="user")
+        patterns = self.sc.detect_patterns("u_sent")
+        self.assertIn(patterns["sentiment_trend"], ["positive", "neutral", "mixed"])
+
+    def test_activity_streak(self):
+        patterns = self.sc.detect_patterns("u_streak")
+        self.assertIsInstance(patterns["activity_streak"], int)
+        self.assertGreaterEqual(patterns["activity_streak"], 0)
+
+
+class TestAdaptiveScorer(unittest.TestCase):
+
+    def setUp(self):
+        self.sc = make_sc()
+
+    def tearDown(self):
+        self.sc.close()
+
+    def test_default_weights(self):
+        weights = self.sc.adaptive.get_weights("u_adapt")
+        self.assertIn("relevance", weights)
+        self.assertIn("importance", weights)
+        self.assertAlmostEqual(sum(weights.values()), 1.0, places=5)
+
+    def test_positive_feedback_adjusts_weights(self):
+        from simplecontext import NodeKind
+        ctx  = self.sc.context("u_adapt2")
+        node = ctx.working.add("python help", NodeKind.MESSAGE)
+        self.sc.feedback("u_adapt2", [node], score=1.0)
+        weights = self.sc.adaptive.get_weights("u_adapt2")
+        self.assertAlmostEqual(sum(weights.values()), 1.0, places=4)
+
+    def test_reset_weights(self):
+        from simplecontext import NodeKind
+        ctx  = self.sc.context("u_adapt3")
+        node = ctx.working.add("test", NodeKind.MESSAGE)
+        self.sc.feedback("u_adapt3", [node], score=-1.0)
+        self.sc.adaptive.reset_weights("u_adapt3")
+        from simplecontext.context.adaptive import DEFAULT_WEIGHTS
+        weights = self.sc.adaptive.get_weights("u_adapt3")
+        self.assertAlmostEqual(weights["relevance"], DEFAULT_WEIGHTS["relevance"], places=3)
+
+    def test_weights_normalized(self):
+        from simplecontext import NodeKind
+        ctx = self.sc.context("u_adapt4")
+        for i in range(5):
+            node = ctx.working.add(f"msg {i}", NodeKind.MESSAGE)
+            self.sc.feedback("u_adapt4", [node], score=1.0 if i % 2 == 0 else -0.5)
+        weights = self.sc.adaptive.get_weights("u_adapt4")
+        self.assertAlmostEqual(sum(weights.values()), 1.0, places=3)
+
+
+class TestSmartCompressor(unittest.TestCase):
+
+    def setUp(self):
+        self.sc = make_sc()
+
+    def tearDown(self):
+        self.sc.close()
+
+    def test_semantic_compress(self):
+        uid = "u_compress2"
+        mem = self.sc.memory(uid)
+        # Topik berbeda → harusnya jadi beberapa chunk
+        for msg in ["python bug error fix code",
+                    "python debug traceback",
+                    "cuaca hari ini cerah",
+                    "makan siang enak sekali",
+                    "server down nginx error",
+                    "deploy docker container"]:
+            mem.add_user(msg)
+        summaries = self.sc.smart_compress(uid, strategy="semantic", keep_last=2)
+        self.assertGreater(len(summaries), 0)
+        episodic = self.sc.context(uid).episodic.get()
+        self.assertGreater(len(episodic), 0)
+
+    def test_time_compress(self):
+        uid = "u_time_compress"
+        mem = self.sc.memory(uid)
+        for i in range(8):
+            mem.add_user(f"message {i}")
+        summaries = self.sc.smart_compress(uid, strategy="time", keep_last=2)
+        self.assertIsInstance(summaries, list)
+
+    def test_token_compress(self):
+        uid = "u_token_compress"
+        mem = self.sc.memory(uid)
+        for i in range(8):
+            mem.add_user(f"message number {i} with some content")
+        summaries = self.sc.smart_compress(uid, strategy="token", keep_last=2)
+        self.assertIsInstance(summaries, list)
+
+
+class TestSnapshotVersioning(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        self.sc = make_sc(**{"export__folder": self.tmpdir})
+
+    def tearDown(self):
+        self.sc.close()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_snapshot_export(self):
+        self.sc.memory("u_snap").add_user("test message")
+        snap = self.sc.snapshot("u_snap", label="test")
+        self.assertEqual(snap["user_id"], "u_snap")
+        self.assertEqual(snap["version"], "4.2.0")
+        self.assertIn("stats", snap)
+
+    def test_list_snapshots(self):
+        self.sc.memory("u_snap2").add_user("hello")
+        self.sc.snapshot("u_snap2")
+        snaps = self.sc.list_snapshots("u_snap2")
+        self.assertGreater(len(snaps), 0)
+        self.assertIn("filename", snaps[0])
+        self.assertIn("timestamp", snaps[0])
+
+    def test_restore_snapshot(self):
+        # Setup data
+        self.sc.memory("u_restore").add_user("data sebelum snapshot")
+        snap = self.sc.snapshot("u_restore")
+
+        # Hapus data
+        self.sc.memory("u_restore").clear()
+        self.assertEqual(self.sc.memory("u_restore").count(), 0)
+
+        # Restore
+        snaps = self.sc.list_snapshots("u_restore")
+        self.sc.restore_snapshot(snaps[0]["path"], merge=False)
+
+        # Data harus kembali
+        count = self.sc.memory("u_restore").count()
+        self.assertGreater(count, 0)
+
+
+if __name__ == "__main__":
+    print("🧪 Test Suite SimpleContext v4.2.0\n")
+    unittest.main(verbosity=2)

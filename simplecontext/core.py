@@ -21,7 +21,11 @@ from .context.node import ContextNode
 from .context.planner import ContextPlanner, RetrievalPlan
 from .context.engine import ContextEngine
 from .context.builder import PromptBuilder
-from .context.processor import MemoryProcessor, ProcessTurn
+from .context.processor import MemoryProcessor, ProcessTurn, SmartCompressor
+from .context.patterns  import PatternDetector
+from .context.graph     import GraphStore
+from .context.adaptive  import AdaptiveScorer
+from .context.fuzzy     import FuzzyRetriever
 from .enums import Tier, NodeKind
 
 logger = logging.getLogger(__name__)
@@ -96,7 +100,14 @@ class SimpleContext:
         )
         self._porter._memory_cache_ref = self._memory_cache
 
-        logger.info(f"✅ SimpleContext v4 ready — {self._storage}")
+        # v4.2 components
+        self._graph      = GraphStore(self._storage)
+        self._patterns   = PatternDetector(self._storage)
+        self._adaptive   = AdaptiveScorer(self._storage)
+        self._compressor = SmartCompressor(self._storage)
+        self._fuzzy      = FuzzyRetriever(self._storage)
+
+        logger.info(f"✅ SimpleContext v4.2 ready — {self._storage}")
 
     def _sync_agent_skills(self):
         """Sync skills dari agent YAML ke storage."""
@@ -233,6 +244,64 @@ class SimpleContext:
         if agent_def.skills:
             self.skills(agent_def.name).sync_from_agent(agent_def.skills)
         return self
+
+    # ── v4.2 API ──────────────────────────────────────────
+
+    @property
+    def graph(self) -> "GraphStore":
+        """Akses Memory Graph untuk store/query relationships."""
+        return self._graph
+
+    @property
+    def patterns(self) -> "PatternDetector":
+        """Deteksi pola dari riwayat interaksi user."""
+        return self._patterns
+
+    @property
+    def adaptive(self) -> "AdaptiveScorer":
+        """Adaptive scoring yang belajar dari feedback."""
+        return self._adaptive
+
+    @property
+    def fuzzy(self) -> "FuzzyRetriever":
+        """Fuzzy search dengan toleransi typo."""
+        return self._fuzzy
+
+    def smart_compress(self, user_id,
+                       strategy: str = "semantic",
+                       keep_last: int = 5) -> list:
+        """
+        Smart compress working memory ke episodic.
+        strategy: 'semantic' | 'time' | 'token'
+        """
+        return self._compressor.smart_compress(
+            str(user_id), strategy=strategy, keep_last=keep_last
+        )
+
+    def detect_patterns(self, user_id,
+                        time_window_days: int = 7) -> dict:
+        """Deteksi pola interaksi user dalam N hari terakhir."""
+        return self._patterns.detect(str(user_id), time_window_days)
+
+    def feedback(self, user_id, selected_nodes: list,
+                 score: float):
+        """
+        Berikan feedback untuk improve adaptive scoring.
+        score: +1.0 (sangat membantu) sampai -1.0 (tidak membantu)
+        """
+        self._adaptive.record_feedback(str(user_id), selected_nodes, score)
+
+    def snapshot(self, user_id, label: str = "") -> dict:
+        """Export memory snapshot dengan versioning."""
+        return self._porter.export_snapshot(str(user_id), label)
+
+    def list_snapshots(self, user_id=None) -> list:
+        """List semua snapshot yang tersimpan."""
+        return self._porter.list_snapshots(str(user_id) if user_id else None)
+
+    def restore_snapshot(self, path: str, merge: bool = False):
+        """Restore memory dari snapshot file."""
+        return self._porter.restore_snapshot(path, merge)
 
     def reload_agents(self):
         self._registry.load()

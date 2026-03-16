@@ -86,6 +86,76 @@ class Porter:
             json.dump(data, f, indent=2, ensure_ascii=False)
         return path
 
+
+    # ── Versioned Snapshot (v4.2) ─────────────────────────
+
+    def export_snapshot(self, user_id: str, label: str = "") -> dict:
+        """Export memory snapshot dengan versioning."""
+        from datetime import datetime, timezone
+        now      = datetime.now(timezone.utc)
+        ts       = now.strftime("%Y%m%d_%H%M%S")
+        label_   = f"_{label}" if label else ""
+        filename = f"snapshot_{user_id}{label_}_{ts}.json"
+        path     = os.path.join(self.export_folder, filename)
+
+        user_data = self._storage.export_user(user_id)
+        snapshot  = {
+            "version":   "4.2.0",
+            "timestamp": now.isoformat(),
+            "user_id":   user_id,
+            "label":     label or f"snapshot_{ts}",
+            "data":      user_data,
+            "stats": {
+                "nodes_count":    len(user_data.get("nodes", [])),
+                "messages_count": len(user_data.get("messages", [])),
+                "profile_keys":   list(user_data.get("profile", {}).keys()),
+            }
+        }
+        os.makedirs(self.export_folder, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, indent=2, ensure_ascii=False)
+        return snapshot
+
+    def list_snapshots(self, user_id: str = None) -> list[dict]:
+        """List semua snapshot yang tersimpan, filter per user_id."""
+        if not os.path.exists(self.export_folder):
+            return []
+        snaps = []
+        for fname in sorted(os.listdir(self.export_folder)):
+            if not fname.startswith("snapshot_") or not fname.endswith(".json"):
+                continue
+            if user_id and not fname.startswith(f"snapshot_{user_id}"):
+                continue
+            fpath = os.path.join(self.export_folder, fname)
+            try:
+                with open(fpath) as f:
+                    data = json.load(f)
+                snaps.append({
+                    "filename":  fname,
+                    "path":      fpath,
+                    "version":   data.get("version"),
+                    "timestamp": data.get("timestamp"),
+                    "user_id":   data.get("user_id"),
+                    "label":     data.get("label"),
+                    "stats":     data.get("stats", {}),
+                })
+            except Exception:
+                continue
+        return snaps
+
+    def restore_snapshot(self, path: str, merge: bool = False):
+        """Restore memory dari snapshot file."""
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Snapshot tidak ditemukan: {path}")
+        with open(path) as f:
+            snapshot = json.load(f)
+        data = snapshot.get("data", {})
+        if not data:
+            raise ValueError("Snapshot kosong atau format tidak valid.")
+        self._storage.import_data(data, merge=merge)
+        if hasattr(self, "_memory_cache_ref") and self._memory_cache_ref:
+            self._memory_cache_ref.clear()
+
     def _auto_path(self, prefix) -> str:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return os.path.join(self.export_folder, f"{prefix}_{ts}.json")

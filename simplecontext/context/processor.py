@@ -301,3 +301,201 @@ def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars - 3].rstrip() + "..."
+
+
+# ── Smart Compression ─────────────────────────────────────
+
+class SmartCompressor:
+    """
+    Compress percakapan dengan semantic chunking.
+    Deteksi pergantian topik tanpa LLM — pakai Jaccard similarity.
+    """
+
+    def __init__(self, storage: "BaseStorage"):
+        self._storage = storage
+
+    def smart_compress(self, user_id: str,
+                       strategy: str = "semantic",
+                       keep_last: int = 5) -> list:
+        """
+        Compress working memory dengan strategi yang dipilih.
+
+        strategy:
+        - "semantic" : pisah berdasarkan topik (Jaccard similarity)
+        - "time"     : per session/jam
+        - "token"    : berdasarkan estimasi token count
+
+        Return: list ContextNode summary yang disimpan ke episodic.
+        """
+        from ..enums import Tier, NodeKind, NodeStatus
+        from .node import ContextNode
+        import uuid
+        from datetime import datetime, timezone
+
+        nodes = self._storage.get_nodes(
+            user_id, tier=Tier.WORKING.value,
+            kind=NodeKind.MESSAGE.value,
+            status=NodeStatus.ACTIVE.value,
+            limit=999999,
+            order="chronological",
+        )
+
+        if len(nodes) <= keep_last:
+            return []
+
+        old_nodes = nodes[:-keep_last]
+
+        if strategy == "semantic":
+            chunks = self._semantic_chunks(old_nodes)
+        elif strategy == "time":
+            chunks = self._time_chunks(old_nodes)
+        elif strategy == "token":
+            chunks = self._token_chunks(old_nodes, max_tokens=500)
+        else:
+            chunks = [old_nodes]
+
+        stored = []
+        now = datetime.now(timezone.utc)
+
+        for chunk in chunks:
+            if not chunk:
+                continue
+            topic   = self._detect_chunk_topic(chunk)
+            summary = self._summarize_chunk(chunk)
+
+            node = ContextNode(
+                user_id    = user_id,
+                path       = f"/memory/episodic/{user_id}/{uuid.uuid4().hex[:8]}",
+                tier       = Tier.EPISODIC,
+                kind       = NodeKind.SUMMARY,
+                content    = summary,
+                created_at = now,
+                updated_at = now,
+                importance = 0.7,
+                source     = "system",
+                tags       = ["compressed", "summary", strategy],
+                metadata   = {
+                    "topic":          topic,
+                    "original_count": len(chunk),
+                    "strategy":       strategy,
+                },
+            )
+            self._storage.save_node(node)
+            stored.append(node)
+
+            # Soft-delete pesan lama
+            for n in chunk:
+                from ..enums import NodeStatus
+                self._storage.update_node_status(n.id, NodeStatus.DELETED.value)
+
+        return stored
+
+    def _semantic_chunks(self, nodes: list,
+                          similarity_threshold: float = 0.25) -> list[list]:
+        """
+        Pisah nodes berdasarkan topik.
+        Kalau Jaccard similarity antara dua pesan berurutan < threshold,
+        anggap topik berganti → buat chunk baru.
+        """
+        if not nodes:
+            return []
+
+        chunks = [[nodes[0]]]
+        for i in range(1, len(nodes)):
+            prev = nodes[i - 1].content
+            curr = nodes[i].content
+            sim  = _jaccard_sim(prev, curr)
+            if sim < similarity_threshold:
+                chunks.append([nodes[i]])  # topik baru
+            else:
+                chunks[-1].append(nodes[i])
+        return chunks
+
+    def _time_chunks(self, nodes: list,
+                     gap_hours: float = 2.0) -> list[list]:
+        """Pisah nodes berdasarkan gap waktu antar pesan."""
+        from datetime import timezone
+        if not nodes:
+            return []
+
+        chunks = [[nodes[0]]]
+        for i in range(1, len(nodes)):
+            prev_dt = nodes[i - 1].created_at
+            curr_dt = nodes[i].created_at
+            if prev_dt.tzinfo is None:
+                prev_dt = prev_dt.replace(tzinfo=timezone.utc)
+            if curr_dt.tzinfo is None:
+                curr_dt = curr_dt.replace(tzinfo=timezone.utc)
+            gap = (curr_dt - prev_dt).total_seconds() / 3600
+            if gap > gap_hours:
+                chunks.append([nodes[i]])
+            else:
+                chunks[-1].append(nodes[i])
+        return chunks
+
+    def _token_chunks(self, nodes: list,
+                      max_tokens: int = 500) -> list[list]:
+        """Pisah nodes berdasarkan estimasi token (4 chars ≈ 1 token)."""
+        chunks = [[]]
+        current_tokens = 0
+        for node in nodes:
+            est_tokens = len(node.content) // 4
+            if current_tokens + est_tokens > max_tokens and chunks[-1]:
+                chunks.append([])
+                current_tokens = 0
+            chunks[-1].append(node)
+            current_tokens += est_tokens
+        return [c for c in chunks if c]
+
+    def _detect_chunk_topic(self, chunk: list) -> str:
+        """Deteksi topik dominan dari chunk menggunakan TF-IDF sederhana."""
+        import re
+        from collections import Counter
+        stopwords = {
+            "yang","dan","di","ke","dari","ini","itu","dengan","untuk",
+            "saya","aku","bisa","the","a","an","i","you","to","is","are",
+        }
+        all_words = []
+        for node in chunk:
+            words = re.findall(r'\b[a-zA-Z\u00C0-\u024F]{3,}\b',
+                               node.content.lower())
+            all_words.extend([w for w in words if w not in stopwords])
+        if not all_words:
+            return "general"
+        return Counter(all_words).most_common(1)[0][0]
+
+    def _summarize_chunk(self, chunk: list) -> str:
+        """Generate summary ringkas dari chunk."""
+        from collections import Counter
+        import re
+
+        user_msgs = [n.content for n in chunk if n.source == "user"]
+        asst_msgs = [n.content for n in chunk if n.source == "assistant"]
+
+        stopwords = {
+            "yang","dan","di","ke","dari","ini","itu","dengan","untuk",
+            "saya","aku","the","a","an","i","you","to","is","are","it",
+        }
+        all_words = []
+        for text in user_msgs:
+            words = re.findall(r'\b[a-zA-Z\u00C0-\u024F]{3,}\b', text.lower())
+            all_words.extend([w for w in words if w not in stopwords])
+        top_words = [w for w, _ in Counter(all_words).most_common(4)]
+
+        lines = [f"Percakapan {len(chunk)} pesan."]
+        if top_words:
+            lines.append(f"Topik: {', '.join(top_words)}.")
+        if user_msgs:
+            lines.append(f"Pertanyaan: \"{user_msgs[0][:100]}\"")
+        if asst_msgs:
+            lines.append(f"Respons: \"{asst_msgs[-1][:100]}\"")
+        return "\n".join(lines)
+
+
+def _jaccard_sim(a: str, b: str) -> float:
+    import re
+    wa = set(re.findall(r'\b\w{2,}\b', a.lower()))
+    wb = set(re.findall(r'\b\w{2,}\b', b.lower()))
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)

@@ -21,6 +21,12 @@ from .context.processor import MemoryProcessor, ProcessTurn
 from .enums import Tier, NodeKind, NodeStatus, Intent
 
 __version__ = "4.0.0"
+from .context.fuzzy    import FuzzyRetriever
+from .context.graph    import GraphStore, Relationship
+from .context.patterns import PatternDetector
+from .context.adaptive import AdaptiveScorer
+from .context.processor import SmartCompressor
+
 __all__ = [
     "SimpleContext", "ChatContext",
     "Memory", "TieredMemory", "TierView",
@@ -32,4 +38,6 @@ __all__ = [
     "ContextEngine", "PromptBuilder",
     "MemoryProcessor", "ProcessTurn",
     "Tier", "NodeKind", "NodeStatus", "Intent",
+    "FuzzyRetriever", "GraphStore", "Relationship",
+    "PatternDetector", "AdaptiveScorer", "SmartCompressor",
 ]
