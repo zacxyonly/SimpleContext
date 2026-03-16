@@ -1,0 +1,48 @@
+simplecontext:
+  version: "3.0"
+
+storage:
+  backend: sqlite        # sqlite | memory | redis | postgresql
+  path: ./sc_data.db
+
+  # Untuk Redis:
+  # backend: redis
+  # url: redis://localhost:6379/0
+  # prefix: sc
+
+  # Untuk PostgreSQL:
+  # backend: postgresql
+  # dsn: postgresql://user:pass@localhost:5432/mydb
+
+memory:
+  default_limit: 20
+  max_per_user: 1000
+  compression:
+    enabled: false       # aktifkan untuk auto-compress history panjang
+    threshold: 50        # compress saat pesan > threshold
+    keep_last: 10        # pertahankan N pesan terakhir utuh
+
+skills:
+  inheritance_depth: 5
+
+agents:
+  folder: ./agents       # folder berisi file YAML agent
+  hot_reload: true       # reload otomatis saat YAML berubah
+  default: general       # agent default jika tidak ada yang cocok
+
+plugins:
+  enabled: true
+  folder: ./plugins      # folder berisi file plugin
+
+  # Config per plugin (nama = nama class plugin)
+  # logger_plugin:
+  #   enabled: true
+  #   log_path: ./sc.log
+  #
+  # auto_tagger:
+  #   enabled: true
+  #   rules:
+  #     debug: [error, bug, traceback]
+
+export:
+  folder: ./exports

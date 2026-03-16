@@ -1,0 +1,14 @@
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.DS_Store
+exports/
+*.log
+config.yaml
+sc_data.db
+test_bot.db
