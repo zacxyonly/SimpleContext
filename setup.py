@@ -9,7 +9,7 @@ setup(
     description="Universal AI Brain — Zero Touch, Zero Dependencies.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/USERNAME/SimpleContext",
+    url="https://github.com/zacxyonly/SimpleContext",
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[],
